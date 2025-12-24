@@ -6,6 +6,7 @@ from .models import FuelStation
 import requests
 import math
 import json
+import hashlib
 
 class IgnoreUnknownView(View):
     def get(self, request, *args, **kwargs):
@@ -171,9 +172,16 @@ class OptimalRouteView(View):
                 'error': f'An error occurred: {str(e)}'
             }, status=500)
     
+    def _make_cache_key(self, prefix, value):
+        """Create a safe cache key by hashing the value"""
+        # Convert value to string and create MD5 hash
+        value_str = str(value)
+        hash_str = hashlib.md5(value_str.encode('utf-8')).hexdigest()
+        return f"{prefix}_{hash_str}"
+    
     def geocode(self, location):
         """Geocode location using Nominatim"""
-        cache_key = f'geocode_{location}'
+        cache_key = self._make_cache_key('geocode', location)
         cached = cache.get(cache_key)
         if cached:
             return cached
@@ -188,20 +196,21 @@ class OptimalRouteView(View):
             headers = {'User-Agent': 'SpotterFuelApp/1.0'}
             
             response = requests.get(url, params=params, headers=headers, timeout=10)
+            response.raise_for_status()
             data = response.json()
             
             if data:
                 coords = (float(data[0]['lon']), float(data[0]['lat']))
                 cache.set(cache_key, coords, 86400)  # Cache for 24 hours
                 return coords
-        except:
-            pass
+        except Exception as e:
+            print(f"Geocoding error for '{location}': {e}")
         
         return None
     
     def get_route(self, start_coords, finish_coords):
         """Get route from OSRM"""
-        cache_key = f'route_{start_coords}_{finish_coords}'
+        cache_key = self._make_cache_key('route', f"{start_coords}_{finish_coords}")
         cached = cache.get(cache_key)
         if cached:
             return cached
@@ -216,6 +225,7 @@ class OptimalRouteView(View):
             }
             
             response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
             data = response.json()
             
             if data.get('code') == 'Ok' and data.get('routes'):
@@ -233,8 +243,12 @@ class OptimalRouteView(View):
                 
                 cache.set(cache_key, route_data, 3600)  # Cache for 1 hour
                 return route_data
-        except Exception as e:
-            print(f"Route error: {e}")
+            else:
+                print(f"OSRM returned code: {data.get('code')}, message: {data.get('message')}")
+        except requests.exceptions.RequestException as e:
+            print(f"Route request error: {e}")
+        except (KeyError, ValueError, json.JSONDecodeError) as e:
+            print(f"Route parsing error: {e}")
         
         return None
     
