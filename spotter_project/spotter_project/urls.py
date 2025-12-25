@@ -18,11 +18,11 @@ from django.contrib import admin
 from django.urls import path, include
 from django.http import HttpResponse
 
-def ignore_view(request):
+def ignore_view(request, path=''):
     return HttpResponse(status=204)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('route_planner.urls')),
-    path('hybridaction/<path:path>', ignore_view),  # Ignore these requests
+    path('api/', include('route_planner.urls')),
+    path('hybridaction/<path:path>', ignore_view),
 ]
